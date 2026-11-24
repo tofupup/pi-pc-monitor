@@ -1,2 +1,2 @@
 # pi-pc-monitor
-print PC stats to pi monitor
+Send PC stats to a remote Raspberry PI to display
