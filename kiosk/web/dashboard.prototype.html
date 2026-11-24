@@ -344,7 +344,7 @@ function render() {
 }
 
 // ---------------- harness wiring ----------------
-function setVariant(v) { variant = v; const p = new URLSearchParams(location.search); p.set('variant', v); history.replaceState(null, '', '?' + p); render(); }
+function setVariant(v) { variant = v; const p = new URLSearchParams(location.search); p.set('variant', v); try { history.replaceState(null, '', '?' + p); } catch (e) {} render(); }
 function step(d) { setVariant(VARIANTS[(VARIANTS.indexOf(variant) + d + VARIANTS.length) % VARIANTS.length]); }
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
 addEventListener('keydown', e => { if (e.target.closest('input, textarea, select, [contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
