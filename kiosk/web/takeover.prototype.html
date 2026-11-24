@@ -114,6 +114,9 @@
   .D .side .v { font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -.02em; margin-bottom: 10px; }
   .D .side .v small { font-size: 26px; color: var(--dim); font-weight: 400; vertical-align: super; }
   .D .side .nr { margin-top: auto; color: #fff; background: var(--red); padding: 8px 12px; border-radius: 6px; font-size: 20px; }
+  /* E: D with the red border on all four sides (the pick) */
+  .D.E { border: 18px solid var(--red); }
+  .D.E .main { border-left: 0; }
   .D .side .x { font-size: 18px; color: var(--dim); }
 </style>
 </head>
@@ -178,9 +181,9 @@ const STATS = { cpu_temp_c: 72, gpu_temp_c: 66, liquid_temp_c: 34.8 };
 // ---------------- harness: plays the Go service ----------------
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const VARIANTS = ['A', 'B', 'C', 'D'];
-const NAMES = { A: 'Red banner + list', B: 'One at a time, red frame', C: 'Red flood, oldest as headline', D: 'Light screen + live temps' };
-let variant = VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'A';
+const VARIANTS = ['A', 'B', 'C', 'D', 'E'];
+const NAMES = { A: 'Red banner + list', B: 'One at a time, red frame', C: 'Red flood, oldest as headline', D: 'Light screen + live temps', E: 'D, red border all round (the pick)' };
+let variant = VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'E';
 let page = 0, pageAge = 0, state;
 
 function buildState() {
@@ -195,7 +198,7 @@ function buildState() {
     dismissed_alerts: +$('dismissed').value,  // how many more are active but Dismissed
     reporting,                                // false → "PC not reporting" (timeout, stopping Report, or Pi boot)
     page: variant === 'B' ? page % alerts.length : undefined, // B only: the service steps this every 6 s
-    stats: variant === 'D' ? (reporting ? STATS : null) : undefined, // D only
+    stats: 'DE'.includes(variant) ? (reporting ? STATS : null) : undefined, // D only
   };
 }
 function tick() {
@@ -261,10 +264,10 @@ const RENDER = {
     if (box.clientHeight < 40 && rest.length) $('view').querySelector('.head .d').classList.add('clamp2');
   },
 
-  D(st) {
+  D(st, pick) {
     const s = st.stats, t = v => v == null ? '—' : Math.round(v);
-    $('view').innerHTML = `<div class="D">
-      <div class="main"><div class="h pulses">⚠ CRITICAL ALERT${st.alerts.length > 1 ? ` · ${st.alerts.length}` : ''}</div>
+    $('view').innerHTML = `<div class="D ${pick ? 'E' : ''}">
+      <div class="main"><div class="h ${pick ? '' : 'pulses'}">⚠ CRITICAL ALERT${st.alerts.length > 1 ? ` · ${st.alerts.length}` : ''}</div>
         <div class="list"></div><div class="foot">${dismissedNote(st.dismissed_alerts)}</div></div>
       <div class="side">
         <div class="lbl">CPU</div><div class="v">${t(s && s.cpu_temp_c)}<small>°</small></div>
@@ -275,8 +278,9 @@ const RENDER = {
     fitList($('view').querySelector('.list'), st.alerts,
       (a, m) => `<div class="row"><div class="t">${esc(a.title)}</div>
         ${m === 'titles' ? '' : `<div class="d ${m === 'clamp' ? 'clamp1' : ''}">${esc(a.detail)}</div><div class="s">since ${esc(a.since)}</div>`}</div>`,
-      k => `<div class="more">+ ${plural(k, 'more alert')}</div>`);
+      k => `<div class="more">${pick ? `+${k} more` : `+ ${plural(k, 'more alert')}`}</div>`);
   },
+  E(st) { RENDER.D(st, true); }, // never blinks, whatever the pulse box says
 };
 
 function render() {
