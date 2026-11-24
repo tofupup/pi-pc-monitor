@@ -113,6 +113,21 @@
   .C .fans .r { display: flex; justify-content: space-between; padding: 3px 0; }
   .C .fans .r > span:first-child { color: var(--dim); }
 
+  /* E: A's dials at D's scale, D's footer (the pick) */
+  .E { display: grid; grid-template-rows: 1fr auto; height: 100%; }
+  .E .big { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 6px 8px 0; }
+  .E .one { display: flex; flex-direction: column; align-items: center; }
+  .E .one .lbl { font-size: 26px; }
+  .E .g { position: relative; width: 336px; height: 294px; color: var(--accent); }
+  .E .g svg { position: absolute; inset: 0; }
+  .E .g .n { position: absolute; left: 0; right: 0; top: 96px; text-align: center; font-size: 116px; font-weight: 700; line-height: 1; letter-spacing: -.03em; color: var(--fg); }
+  .E .g .n small { font-size: 40px; font-weight: 400; color: var(--dim); vertical-align: super; }
+  .E .one .s { font-size: 26px; color: var(--dim); margin-top: -26px; }
+  .E .one .s b { color: var(--fg); font-weight: 600; }
+  .E .foot { border-top: 1px solid var(--line); padding: 12px 20px 14px; font-size: 19px; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+  .E .foot b { color: var(--fg); font-weight: 600; }
+  .E .foot .line { display: flex; gap: 22px; flex-wrap: wrap; }
+
   /* D: giant three */
   .D { display: grid; grid-template-rows: 1fr auto; height: 100%; }
   .D .big { display: grid; grid-template-columns: 1fr 1fr 1.3fr; align-items: center; padding: 0 10px; }
@@ -152,7 +167,7 @@
       <option value="live" selected>Live (1/s)</option>
       <option value="frozen">Stalled: values just freeze</option>
       <option value="dim">Stalled: values dim</option>
-      <option value="badge">Stalled: "no Report" badge</option>
+      <option value="badge">Stalled: "no Report" badge (picked)</option>
     </select>
   </label>
   <label>Size
@@ -194,9 +209,9 @@ const CUES = { cpu_temp_c: [80, 90], gpu_temp_c: [75, 83], gpu_hotspot_c: [90, 1
 // ---------------- harness: plays the Go service ----------------
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const VARIANTS = ['A', 'B', 'C', 'D'];
-const NAMES = { A: 'Three dials', B: 'Component columns', C: 'One temperature scale', D: 'Giant three' };
-let variant = VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'A';
+const VARIANTS = ['A', 'B', 'C', 'D', 'E'];
+const NAMES = { A: 'Three dials', B: 'Component columns', C: 'One temperature scale', D: 'Giant three', E: 'Dials + giant three' };
+let variant = VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'E';
 let state, stalledFor = 0;
 
 function jitter(v, amt, dec = 0) {
@@ -307,6 +322,28 @@ const RENDER = {
         <div class="load w"><span></span><span>${f(s.gpu_power_w)} W</span></div>
         <div class="load"><span class="lbl">RAM</span><span><span class="v">${f(s.ram_used_gb)}</span><span class="u"> GB</span></span></div>
         <div class="fans">${fans.map(([n, v]) => `<div class="r"><span>${n}</span><span><span class="v">${f(v)}</span></span></div>`).join('')}<div class="r"><span></span><span class="u">rpm</span></div></div>
+      </div></div>`;
+  },
+
+  E(s, st) {
+    // liquid shown as a whole number, like every other temperature
+    const dial = (label, v, lo, hi, key, sub) => {
+      const r = v == null ? null : Math.round(v), c = cue(key, v);
+      return `<div class="one"><div class="lbl">${label}</div>
+        <div class="g ${c}">${arc(pctOf(v, lo, hi), c)}<div class="n ${c}"><span class="v">${f(r)}</span><small>°</small></div></div>
+        <div class="s">${sub}</div></div>`;
+    };
+    const b = (v, u = '') => `<b class="v">${f(v)}</b>${v == null ? '' : u}`;
+    return `<div class="E"><div class="big">
+        ${dial('CPU', s.cpu_temp_c, 20, 95, 'cpu_temp_c', `${b(s.cpu_load_pct, '%')} · ${b(s.cpu_power_w, ' W')}`)}
+        ${dial('GPU', s.gpu_temp_c, 20, 90, 'gpu_temp_c', `${b(s.gpu_load_pct, '%')} · ${b(s.gpu_power_w, ' W')}`)}
+        ${dial('Liquid', s.liquid_temp_c, 20, 45, 'liquid_temp_c', `pump ${b(s.pump_rpm)} · rad ${b(s.radiator_fan_rpm)}`)}
+      </div><div class="foot">
+        <div class="line">${dismissedSign(st.dismissed_alerts)}<span>RAM ${b(s.ram_used_gb, ' GB')} · <span class="${cue('ram_temp_c', s.ram_temp_c)}">${f(s.ram_temp_c)}°</span></span>
+          <span>VRM <b class="v ${cue('vrm_temp_c', s.vrm_temp_c)}">${f(s.vrm_temp_c)}°</b></span>
+          <span>Hot spot <b class="v ${cue('gpu_hotspot_c', s.gpu_hotspot_c)}">${f(s.gpu_hotspot_c)}°</b></span><span>GPU fan ${b(s.gpu_fan_rpm)}</span></div>
+        <div class="line"><span>Fans ${caseFans(s).map(([n, v]) => `${n.toLowerCase()} ${b(v)}`).join(' · ')}</span>
+          <span>Drives ${s.drives.length ? s.drives.map(d => `${d.label} <b class="v ${cue('drive', d.temp_c)}">${f(d.temp_c)}°</b>`).join(' ') : '—'}</span></div>
       </div></div>`;
   },
 
