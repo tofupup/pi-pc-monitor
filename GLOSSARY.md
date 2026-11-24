@@ -40,6 +40,10 @@ _Avoid_: UI, GUI, home page
 A notice of an urgent problem with the PC, such as a failing Drive or a hardware error logged by Windows, that takes over the Screen in place of the Dashboard.
 _Avoid_: Warning, notification, alarm
 
+**Trigger**:
+A program or script on the PC, separate from the Reporter, that raises a Critical Alert when its condition becomes true and Clears it when the condition stops.
+_Avoid_: Check, monitor, rule
+
 **Cleared**:
 Said of a Critical Alert whose underlying condition is no longer true.
 _Avoid_: Resolved, fixed, closed
