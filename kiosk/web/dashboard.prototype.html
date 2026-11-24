@@ -1,0 +1,369 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Answers "What does the Dashboard look like?" (wayfinder ticket #10).
+  Four structurally different Dashboards at the Screen's real 1024x600, switchable via ?variant=A..D
+  (or the bottom bar / arrow keys). The control panel stands in for the Go service: it feeds the page
+  full state about once a second. Lives on the prototype/dashboard branch only; never merge.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard prototype</title>
+<style>
+  /* ---------- harness (not part of the design) ---------- */
+  html, body { margin: 0; background: #2a2d33; color: #ddd; font: 13px/1.4 system-ui, sans-serif; }
+  #panel { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 8px 14px; background: #1b1d21; border-bottom: 1px solid #000; }
+  #panel label { display: inline-flex; gap: 6px; align-items: center; }
+  #panel select, #panel button { font: inherit; }
+  #panel .hint { color: #8a8f98; }
+  #stage { display: flex; justify-content: center; align-items: flex-start; padding: 14px 0 70px; }
+  #scaler { transform-origin: top left; }
+  #frame-wrap { outline: 10px solid #111; border-radius: 2px; }
+  details#dump { margin: 0 14px 80px; }
+  details#dump pre { background: #111; padding: 10px; overflow: auto; max-height: 300px; }
+  #switcher { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+    background: #fff; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 4px 18px rgba(0,0,0,.5); z-index: 10; font: 600 14px system-ui, sans-serif; }
+  #switcher button { border: 0; background: #eee; border-radius: 999px; width: 34px; height: 34px; font-size: 16px; cursor: pointer; }
+  #switcher span { padding: 0 12px; min-width: 210px; text-align: center; }
+  body.bare { background: #000; overflow: hidden; }
+  body.bare #panel, body.bare #switcher, body.bare #dump { display: none; }
+  body.bare #stage { padding: 0; justify-content: flex-start; }
+  body.bare #frame-wrap { outline: 0; }
+
+  /* ---------- the Dashboard (this is what's being judged) ---------- */
+  #frame {
+    --bg: #000; --fg: #f2f3f5; --dim: #8a8f98; --faint: #3a3d44; --line: #1c1e22;
+    --ok: #f2f3f5; --warm: #ffb020; --hot: #ff4d4d; --accent: #5cc8ff;
+    width: 1024px; height: 600px; overflow: hidden; position: relative; box-sizing: border-box;
+    background: var(--bg); color: var(--fg);
+    font-family: "Inter", "DejaVu Sans", system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  }
+  #frame * { box-sizing: border-box; }
+  #view { height: 100%; }
+  .dec { font-size: .55em; }
+  .u { color: var(--dim); font-weight: 400; }
+  .lbl { color: var(--dim); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .warm { color: var(--warm) !important; }
+  .hot { color: var(--hot) !important; }
+  .nocues .warm, .nocues .hot { color: inherit !important; }
+  .dismissed { color: var(--warm); font-weight: 600; font-size: 20px; white-space: nowrap; }
+
+  /* stall treatments: what shows in the seconds before Blank */
+  #frame.stall-dim .v, #frame.stall-dim svg .val { opacity: .3; transition: opacity .6s; }
+  #stall-badge { position: absolute; top: 14px; right: 16px; background: #222; color: var(--dim); border: 1px solid var(--faint);
+    border-radius: 6px; padding: 4px 10px; font-size: 18px; display: none; z-index: 2; }
+  #frame.stall-badge-on #stall-badge { display: block; }
+
+  /* A: three dials */
+  .A { display: grid; grid-template-rows: 1fr auto; height: 100%; padding: 18px 22px 16px; gap: 10px; }
+  .A .dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .A .dial { display: flex; flex-direction: column; align-items: center; }
+  .A .dial .lbl { font-size: 22px; }
+  .A .dial .g { position: relative; width: 270px; height: 236px; }
+  .A .dial svg { position: absolute; inset: 0; }
+  .A .dial .num { position: absolute; left: 0; right: 0; top: 78px; text-align: center; font-size: 84px; font-weight: 700; line-height: 1; }
+  .A .dial .num small { font-size: 34px; font-weight: 400; color: var(--dim); }
+  .A .dial .sub { font-size: 22px; color: var(--fg); display: flex; gap: 18px; margin-top: -10px; }
+  .A .dial .sub2 { font-size: 18px; color: var(--dim); margin-top: 2px; }
+  .A .strip { display: grid; grid-template-columns: 1fr 1fr 1.6fr 1.6fr; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; padding-bottom: 26px; }
+  .A .tile .lbl { font-size: 15px; }
+  .A .tile .v { font-size: 30px; font-weight: 600; }
+  .A .tile .row { font-size: 20px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .A .dismissed { position: absolute; bottom: 12px; right: 22px; font-size: 18px; }
+  .A .dial .num .dec { font-size: 48px; }
+
+  /* B: component columns */
+  .B { display: grid; grid-template-columns: repeat(4, 1fr); height: calc(100% - 44px); }
+  .B .col { padding: 20px 20px 0; border-right: 1px solid var(--line); }
+  .B .col:last-child { border-right: 0; }
+  .B .col .lbl { font-size: 22px; }
+  .B .hero { font-size: 92px; font-weight: 700; line-height: 1.05; margin: 4px 0 14px; white-space: nowrap; }
+  .B .hero .dec { font-size: 56px; }
+  .B .hero small { font-size: 36px; font-weight: 400; color: var(--dim); }
+  .B .r { display: flex; justify-content: space-between; font-size: 22px; padding: 7px 0; border-top: 1px solid var(--line); }
+  .B .r > span:first-child { color: var(--dim); }
+  .B .r .v { font-weight: 600; }
+  .B .foot { height: 44px; display: flex; align-items: center; padding: 0 20px; border-top: 1px solid var(--line); }
+
+  /* C: one shared temperature scale */
+  .C { display: grid; grid-template-columns: 1fr 300px; height: 100%; }
+  .C .temps { padding: 18px 22px; display: flex; flex-direction: column; }
+  .C .scale { display: grid; grid-template-columns: 130px 1fr 120px; font-size: 14px; color: var(--dim); margin-bottom: 6px; }
+  .C .scale .ticks { position: relative; height: 16px; }
+  .C .scale .ticks span { position: absolute; transform: translateX(-50%); }
+  .C .bars { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; }
+  .C .bar { display: grid; grid-template-columns: 130px 1fr 120px; align-items: center; }
+  .C .bar .name { font-size: 22px; color: var(--dim); }
+  .C .bar.major .name { color: var(--fg); font-weight: 600; font-size: 26px; }
+  .C .bar .track { height: 16px; background: #121316; border-radius: 3px; position: relative; overflow: hidden; }
+  .C .bar.major .track { height: 30px; }
+  .C .bar .fill { position: absolute; inset: 0 auto 0 0; background: #c9ccd2; border-radius: 3px; }
+  .C .bar .fill.warm { background: var(--warm); } .C .bar .fill.hot { background: var(--hot); }
+  .nocues .C .bar .fill.warm, .nocues .C .bar .fill.hot { background: #c9ccd2; }
+  .C .bar .v { text-align: right; font-size: 26px; font-weight: 600; }
+  .C .bar.major .v { font-size: 34px; }
+  .C .side { border-left: 1px solid var(--line); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .C .load { display: flex; justify-content: space-between; align-items: baseline; }
+  .C .load .lbl { font-size: 18px; }
+  .C .load .v { font-size: 56px; font-weight: 700; line-height: 1; }
+  .C .load.w { font-size: 20px; color: var(--dim); margin-top: -10px; }
+  .C .load .u { font-size: 24px; }
+  .C .fans { margin-top: auto; font-size: 20px; }
+  .C .fans .r { display: flex; justify-content: space-between; padding: 3px 0; }
+  .C .fans .r > span:first-child { color: var(--dim); }
+
+  /* D: giant three */
+  .D { display: grid; grid-template-rows: 1fr auto; height: 100%; }
+  .D .big { display: grid; grid-template-columns: 1fr 1fr 1.3fr; align-items: center; padding: 0 10px; }
+  .D .one { text-align: center; }
+  .D .one .lbl { font-size: 28px; }
+  .D .one .n { font-size: 168px; font-weight: 700; line-height: .95; letter-spacing: -.03em; }
+  .D .one .n .dec { font-size: 92px; }
+  .D .one .n small { font-size: 56px; font-weight: 400; color: var(--dim); vertical-align: super; }
+  .D .one .s { font-size: 26px; color: var(--dim); }
+  .D .one .s b { color: var(--fg); font-weight: 600; }
+  .D .foot { border-top: 1px solid var(--line); padding: 12px 20px 14px; font-size: 19px; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+  .D .foot b { color: var(--fg); font-weight: 600; }
+  .D .foot .line { display: flex; gap: 22px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <strong>PROTOTYPE</strong>
+  <label>Scenario
+    <select id="scenario">
+      <option value="idle">Idle desktop</option>
+      <option value="gaming" selected>Gaming</option>
+      <option value="stress">Stress test (hot)</option>
+      <option value="missing">Nice-to-haves unreadable</option>
+    </select>
+  </label>
+  <label>Drives
+    <select id="drives"><option value="3" selected>3 (C: D: E:)</option><option value="5">5 (+2 USB)</option><option value="0">none report</option></select>
+  </label>
+  <label>Dismissed alerts
+    <select id="dismissed"><option>0</option><option>1</option><option>2</option></select>
+  </label>
+  <label><input type="checkbox" id="cues" checked> Colour cues</label>
+  <label>Reports
+    <select id="stall">
+      <option value="live" selected>Live (1/s)</option>
+      <option value="frozen">Stalled: values just freeze</option>
+      <option value="dim">Stalled: values dim</option>
+      <option value="badge">Stalled: "no Report" badge</option>
+    </select>
+  </label>
+  <label>Size
+    <select id="size"><option value="fit" selected>Fit window</option><option value="1">1:1 pixels</option></select>
+  </label>
+  <span class="hint">On the Screen 1 px ≈ 0.15 mm: 100 px type ≈ 15 mm. Whole Screen ≈ 153 × 90 mm.</span>
+</div>
+
+<div id="stage"><div id="scaler"><div id="frame-wrap"><div id="frame"><div id="stall-badge"></div><div id="view"></div></div></div></div></div>
+
+<details id="dump"><summary>Page state (what the Go service would push)</summary><pre id="state"></pre></details>
+
+<div id="switcher">
+  <button id="prev" title="Previous (←)">‹</button>
+  <span id="vlabel"></span>
+  <button id="next" title="Next (→)">›</button>
+</div>
+
+<script>
+// ---------------- fake data, shaped like Report fields (ADR 0001, ticket #7) ----------------
+const SCENARIOS = {
+  idle:   { cpu_temp_c: 46, cpu_load_pct: 4,  cpu_power_w: 28,  gpu_temp_c: 35, gpu_hotspot_c: 43, gpu_load_pct: 2,  gpu_power_w: 31,  gpu_fan_rpm: 0,
+            liquid_temp_c: 29.4, pump_rpm: 2010, radiator_fan_rpm: 820,  fan_rear_rpm: 710,  fan_top_rpm: 690,  fan_bottom_rpm: 760,
+            ram_used_gb: 14, ram_temp_c: 38, vrm_temp_c: 44, drives: [41, 37, 34] },
+  gaming: { cpu_temp_c: 72, cpu_load_pct: 41, cpu_power_w: 86,  gpu_temp_c: 66, gpu_hotspot_c: 78, gpu_load_pct: 97, gpu_power_w: 412, gpu_fan_rpm: 1460,
+            liquid_temp_c: 34.8, pump_rpm: 2780, radiator_fan_rpm: 1380, fan_rear_rpm: 1090, fan_top_rpm: 1050, fan_bottom_rpm: 1140,
+            ram_used_gb: 23, ram_temp_c: 45, vrm_temp_c: 58, drives: [48, 40, 36] },
+  stress: { cpu_temp_c: 91, cpu_load_pct: 100, cpu_power_w: 142, gpu_temp_c: 81, gpu_hotspot_c: 96, gpu_load_pct: 100, gpu_power_w: 448, gpu_fan_rpm: 2050,
+            liquid_temp_c: 38.9, pump_rpm: 2800, radiator_fan_rpm: 1820, fan_rear_rpm: 1480, fan_top_rpm: 1460, fan_bottom_rpm: 1510,
+            ram_used_gb: 41, ram_temp_c: 57, vrm_temp_c: 82, drives: [63, 44, 38] },
+};
+SCENARIOS.missing = Object.assign({}, SCENARIOS.gaming, { cpu_power_w: null, gpu_hotspot_c: null, gpu_power_w: null, gpu_fan_rpm: null,
+  pump_rpm: null, radiator_fan_rpm: null, fan_rear_rpm: null, fan_top_rpm: null, fan_bottom_rpm: null, ram_temp_c: null, vrm_temp_c: null, drives: [] });
+const DRIVE_LABELS = ['C:', 'D:', 'E:', 'F:', 'Samsung T7'];
+
+// Illustrative thresholds only: whether cues exist at all is still fog on the map.
+const CUES = { cpu_temp_c: [80, 90], gpu_temp_c: [75, 83], gpu_hotspot_c: [90, 100], liquid_temp_c: [36, 40], vrm_temp_c: [80, 95], ram_temp_c: [55, 65], drive: [60, 70] };
+
+// ---------------- harness: plays the Go service ----------------
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const VARIANTS = ['A', 'B', 'C', 'D'];
+const NAMES = { A: 'Three dials', B: 'Component columns', C: 'One temperature scale', D: 'Giant three' };
+let variant = VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'A';
+let state, stalledFor = 0;
+
+function jitter(v, amt, dec = 0) {
+  if (v == null) return null;
+  const n = v + (Math.random() * 2 - 1) * amt;
+  return dec ? Math.round(n * 10) / 10 : Math.max(0, Math.round(n));
+}
+function buildState(live) {
+  const base = SCENARIOS[$('scenario').value];
+  const nDrives = +$('drives').value;
+  const stats = {};
+  for (const [k, v] of Object.entries(base)) {
+    if (k === 'drives') continue;
+    const amt = k.endsWith('_rpm') ? 25 : k.endsWith('_pct') ? 3 : k.endsWith('_w') ? 6 : k === 'liquid_temp_c' ? 0.1 : k === 'ram_used_gb' ? 0 : 1;
+    stats[k] = live ? jitter(v, amt, k === 'liquid_temp_c') : v;
+  }
+  const temps = base.drives.length ? [...base.drives, 33, 31] : [];
+  stats.drives = temps.slice(0, nDrives).map((t, i) => ({ label: DRIVE_LABELS[i], temp_c: live ? jitter(t, 1) : t }));
+  const nd = +$('dismissed').value;
+  return { screen: 'dashboard', stats, dismissed_alerts: nd,
+           report_age_s: $('stall').value === 'live' ? 0 : stalledFor };
+}
+function tick() {
+  const stall = $('stall').value;
+  if (stall === 'live' || !state) { stalledFor = 0; state = buildState(true); }
+  else stalledFor = Math.min(stalledFor + 1, 9); // service would Blank at 10 s
+  state.report_age_s = stall === 'live' ? 0 : stalledFor;
+  render();
+}
+
+// ---------------- the page: a dumb renderer of state ----------------
+const f = (v, dec = 0) => v == null ? '—' : dec ? v.toFixed(dec) : String(v);
+// big numbers: the tenths digit drawn smaller so 34.8 fits where 72 does
+const fBig = (v, dec = 0) => { if (v == null || !dec) return f(v); const [w, d] = v.toFixed(1).split('.'); return `${w}<span class="dec">.${d}</span>`; };
+const cue = (key, v) => { const t = CUES[key]; if (!t || v == null) return ''; return v >= t[1] ? 'hot' : v >= t[0] ? 'warm' : ''; };
+const val = (v, unit, cls = '', dec = 0) => `<span><span class="v ${cls}">${f(v, dec)}</span>${v == null ? '' : `<span class="u">${unit}</span>`}</span>`;
+const dismissedSign = n => n ? `<span class="dismissed">⚠ ${n} dismissed alert${n > 1 ? 's' : ''}</span>` : '';
+const caseFans = s => [['Rear', s.fan_rear_rpm], ['Top', s.fan_top_rpm], ['Bottom', s.fan_bottom_rpm]];
+
+function arc(pct, cls) {
+  // 270° gauge, pathLength 100 so the dash maps straight to percent
+  const p = Math.max(0, Math.min(100, pct));
+  const d = 'M 48.6 196.4 A 105 105 0 1 1 221.4 196.4';
+  return `<svg viewBox="0 0 270 236"><path d="${d}" pathLength="100" fill="none" stroke="#17191d" stroke-width="18" stroke-linecap="round"/>
+    <path class="val ${cls}" d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" stroke-dasharray="${p} 100"/></svg>`;
+}
+const pctOf = (v, lo, hi) => v == null ? 0 : (v - lo) / (hi - lo) * 100;
+
+const RENDER = {
+  A(s, st) {
+    const dial = (label, v, lo, hi, key, dec, sub, sub2) => {
+      const c = cue(key, v);
+      return `<div class="dial"><div class="lbl">${label}</div>
+        <div class="g ${c}" style="color:${c ? '' : 'var(--accent)'}">${arc(pctOf(v, lo, hi), c)}
+          <div class="num ${c}" style="color:${c ? '' : 'var(--fg)'}"><span class="v">${fBig(v, dec)}</span><small>°C</small></div></div>
+        <div class="sub">${sub}</div><div class="sub2">${sub2}</div></div>`;
+    };
+    return `<div class="A">${dismissedSign(st.dismissed_alerts)}
+      <div class="dials">
+        ${dial('CPU', s.cpu_temp_c, 20, 95, 'cpu_temp_c', 0, `${val(s.cpu_load_pct, '%')} ${val(s.cpu_power_w, ' W')}`, '&nbsp;')}
+        ${dial('GPU', s.gpu_temp_c, 20, 90, 'gpu_temp_c', 0, `${val(s.gpu_load_pct, '%')} ${val(s.gpu_power_w, ' W')}`,
+               `hot spot <span class="${cue('gpu_hotspot_c', s.gpu_hotspot_c)}">${f(s.gpu_hotspot_c)}°</span> · fan ${f(s.gpu_fan_rpm)}`)}
+        ${dial('Liquid', s.liquid_temp_c, 20, 45, 'liquid_temp_c', 1, `<span><span class="u">pump</span> ${f(s.pump_rpm)}</span>`, `radiator fans ${f(s.radiator_fan_rpm)} rpm`)}
+      </div>
+      <div class="strip">
+        <div class="tile"><div class="lbl">RAM</div>${val(s.ram_used_gb, ' GB')}<div class="row"><span class="u">temp</span><span class="${cue('ram_temp_c', s.ram_temp_c)}">${f(s.ram_temp_c)}°</span></div></div>
+        <div class="tile"><div class="lbl">VRM</div><span class="${cue('vrm_temp_c', s.vrm_temp_c)}">${val(s.vrm_temp_c, '°C')}</span></div>
+        <div class="tile"><div class="lbl">Case fans · rpm</div><div class="row">${caseFans(s).map(([n, v]) => `<span><span class="u">${n}</span> ${f(v)}</span>`).join('')}</div></div>
+        <div class="tile"><div class="lbl">Drives · °C</div><div class="row">${s.drives.length ? s.drives.map(d => `<span><span class="u">${d.label}</span> <span class="${cue('drive', d.temp_c)}">${f(d.temp_c)}</span></span>`).join('') : '<span class="u">—</span>'}</div></div>
+      </div></div>`;
+  },
+
+  B(s, st) {
+    const r = (name, v, unit, cls = '') => `<div class="r"><span>${name}</span><span><span class="v ${cls}">${f(v)}</span>${v == null ? '' : `<span class="u">${unit}</span>`}</span></div>`;
+    const hero = (v, unit, cls, dec = 0) => `<div class="hero ${cls}"><span class="v">${fBig(v, dec)}</span><small>${unit}</small></div>`;
+    return `<div class="B">
+      <div class="col"><div class="lbl">CPU</div>${hero(s.cpu_temp_c, '°C', cue('cpu_temp_c', s.cpu_temp_c))}
+        ${r('Load', s.cpu_load_pct, ' %')}${r('Power', s.cpu_power_w, ' W')}</div>
+      <div class="col"><div class="lbl">GPU</div>${hero(s.gpu_temp_c, '°C', cue('gpu_temp_c', s.gpu_temp_c))}
+        ${r('Load', s.gpu_load_pct, ' %')}${r('Power', s.gpu_power_w, ' W')}${r('Hot spot', s.gpu_hotspot_c, '°', cue('gpu_hotspot_c', s.gpu_hotspot_c))}${r('Fan', s.gpu_fan_rpm, ' rpm')}</div>
+      <div class="col"><div class="lbl">Liquid</div>${hero(s.liquid_temp_c, '°C', cue('liquid_temp_c', s.liquid_temp_c), 1)}
+        ${r('Pump', s.pump_rpm, ' rpm')}${r('Radiator', s.radiator_fan_rpm, ' rpm')}${caseFans(s).map(([n, v]) => r(n, v, ' rpm')).join('')}</div>
+      <div class="col"><div class="lbl">RAM</div>${hero(s.ram_used_gb, 'GB', '')}
+        ${r('RAM temp', s.ram_temp_c, '°', cue('ram_temp_c', s.ram_temp_c))}${r('VRM', s.vrm_temp_c, '°', cue('vrm_temp_c', s.vrm_temp_c))}
+        ${s.drives.map(d => r(d.label, d.temp_c, '°', cue('drive', d.temp_c))).join('')}</div>
+    </div><div class="B foot">${dismissedSign(st.dismissed_alerts)}</div>`;
+  },
+
+  C(s, st) {
+    const lo = 20, hi = 100;
+    const rows = [
+      ['CPU', s.cpu_temp_c, 'cpu_temp_c', true, 0], ['GPU', s.gpu_temp_c, 'gpu_temp_c', true, 0], ['Liquid', s.liquid_temp_c, 'liquid_temp_c', true, 1],
+      ['Hot spot', s.gpu_hotspot_c, 'gpu_hotspot_c', false, 0], ['VRM', s.vrm_temp_c, 'vrm_temp_c', false, 0], ['RAM', s.ram_temp_c, 'ram_temp_c', false, 0],
+      ...s.drives.map(d => [d.label, d.temp_c, 'drive', false, 0]),
+    ];
+    const ticks = [20, 40, 60, 80, 100].map(t => `<span style="left:${(t - lo) / (hi - lo) * 100}%">${t}°</span>`).join('');
+    const fans = [['GPU fan', s.gpu_fan_rpm], ['Pump', s.pump_rpm], ['Radiator', s.radiator_fan_rpm], ...caseFans(s).map(([n, v]) => [n + ' fan', v])];
+    return `<div class="C">
+      <div class="temps"><div class="scale"><span></span><div class="ticks">${ticks}</div><span></span></div>
+        <div class="bars">${rows.map(([n, v, k, major, dec]) => { const c = cue(k, v); return `<div class="bar ${major ? 'major' : ''}"><span class="name">${n}</span>
+          <div class="track"><div class="fill val ${c}" style="width:${Math.max(0, Math.min(100, pctOf(v, lo, hi)))}%"></div></div>
+          <span class="v ${c}">${f(v, dec)}${v == null ? '' : '<span class="u">°</span>'}</span></div>`; }).join('')}</div></div>
+      <div class="side">
+        ${dismissedSign(st.dismissed_alerts)}
+        <div class="load"><span class="lbl">CPU load</span><span><span class="v">${f(s.cpu_load_pct)}</span><span class="u">%</span></span></div>
+        <div class="load w"><span></span><span>${f(s.cpu_power_w)} W</span></div>
+        <div class="load"><span class="lbl">GPU load</span><span><span class="v">${f(s.gpu_load_pct)}</span><span class="u">%</span></span></div>
+        <div class="load w"><span></span><span>${f(s.gpu_power_w)} W</span></div>
+        <div class="load"><span class="lbl">RAM</span><span><span class="v">${f(s.ram_used_gb)}</span><span class="u"> GB</span></span></div>
+        <div class="fans">${fans.map(([n, v]) => `<div class="r"><span>${n}</span><span><span class="v">${f(v)}</span></span></div>`).join('')}<div class="r"><span></span><span class="u">rpm</span></div></div>
+      </div></div>`;
+  },
+
+  D(s, st) {
+    const big = (label, v, key, dec, sub) => {
+      const whole = v == null ? '—' : dec ? Math.trunc(v) : v;
+      const frac = v != null && dec ? `<span class="dec">.${Math.round((v % 1) * 10) % 10}</span>` : '';
+      return `<div class="one"><div class="lbl">${label}</div><div class="n ${cue(key, v)}"><span class="v">${whole}${frac}</span><small>°</small></div><div class="s">${sub}</div></div>`;
+    };
+    const b = (v, u = '') => `<b class="v">${f(v)}</b>${v == null ? '' : u}`;
+    return `<div class="D"><div class="big">
+        ${big('CPU', s.cpu_temp_c, 'cpu_temp_c', 0, `${b(s.cpu_load_pct, '%')} · ${b(s.cpu_power_w, ' W')}`)}
+        ${big('GPU', s.gpu_temp_c, 'gpu_temp_c', 0, `${b(s.gpu_load_pct, '%')} · ${b(s.gpu_power_w, ' W')}`)}
+        ${big('Liquid', s.liquid_temp_c, 'liquid_temp_c', 1, `pump ${b(s.pump_rpm)} · rad ${b(s.radiator_fan_rpm)}`)}
+      </div><div class="foot">
+        <div class="line">${dismissedSign(st.dismissed_alerts)}<span>RAM ${b(s.ram_used_gb, ' GB')} · <span class="${cue('ram_temp_c', s.ram_temp_c)}">${f(s.ram_temp_c)}°</span></span>
+          <span>VRM <b class="v ${cue('vrm_temp_c', s.vrm_temp_c)}">${f(s.vrm_temp_c)}°</b></span>
+          <span>Hot spot <b class="v ${cue('gpu_hotspot_c', s.gpu_hotspot_c)}">${f(s.gpu_hotspot_c)}°</b></span><span>GPU fan ${b(s.gpu_fan_rpm)}</span></div>
+        <div class="line"><span>Fans ${caseFans(s).map(([n, v]) => `${n.toLowerCase()} ${b(v)}`).join(' · ')}</span>
+          <span>Drives ${s.drives.length ? s.drives.map(d => `${d.label} <b class="v ${cue('drive', d.temp_c)}">${f(d.temp_c)}°</b>`).join(' ') : '—'}</span></div>
+      </div></div>`;
+  },
+};
+
+function render() {
+  const frame = $('frame');
+  frame.classList.toggle('nocues', !$('cues').checked);
+  const stall = $('stall').value, age = state.report_age_s;
+  frame.classList.toggle('stall-dim', stall === 'dim' && age >= 3);
+  frame.classList.toggle('stall-badge-on', stall === 'badge' && age >= 3);
+  $('stall-badge').textContent = `No Report for ${age} s`;
+  $('view').innerHTML = RENDER[variant](state.stats, state);
+  $('vlabel').textContent = `${variant} (${NAMES[variant]})`;
+  $('state').textContent = JSON.stringify(state, null, 2) + (stall === 'live' ? '' : `\n// stalled ${age} s: the service Blanks the Screen at 10 s`);
+}
+
+// ---------------- harness wiring ----------------
+function setVariant(v) { variant = v; const p = new URLSearchParams(location.search); p.set('variant', v); history.replaceState(null, '', '?' + p); render(); }
+function step(d) { setVariant(VARIANTS[(VARIANTS.indexOf(variant) + d + VARIANTS.length) % VARIANTS.length]); }
+$('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
+addEventListener('keydown', e => { if (e.target.closest('input, textarea, select, [contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+for (const id of ['scenario', 'drives', 'dismissed']) $(id).onchange = () => { state = buildState(true); render(); };
+$('cues').onchange = render;
+$('stall').onchange = () => { stalledFor = 0; render(); };
+function fit() {
+  const s = $('size').value === 'fit' ? Math.min((innerWidth - 40) / 1044, (innerHeight - $('panel').offsetHeight - 100) / 620) : 1;
+  $('scaler').style.transform = `scale(${s})`;
+  $('stage').style.height = (620 * s + 20) + 'px'; $('scaler').style.width = '1044px';
+  $('stage').style.width = '100%'; $('scaler').style.marginRight = (1044 * s - 1044) + 'px';
+}
+$('size').onchange = fit; addEventListener('resize', fit);
+// Every control can also be set from the URL, e.g. ?variant=B&scenario=stress&dismissed=1&stall=dim
+for (const id of ['scenario', 'drives', 'dismissed', 'stall', 'size']) if (params.has(id)) $(id).value = params.get(id);
+if (params.has('cues')) $('cues').checked = params.get('cues') !== '0';
+// ?bare: only the 1024x600 Screen at the top-left, e.g. for Chromium --kiosk on the real Pi
+if (params.has('bare')) { document.body.classList.add('bare'); $('size').value = '1'; }
+state = buildState(true); render(); fit(); setInterval(tick, 1000);
+</script>
+</body>
+</html>
