@@ -36,6 +36,10 @@ _Avoid_: Display, monitor, panel
 The glanceable live view of Stats shown on the Screen.
 _Avoid_: UI, GUI, home page
 
+**Colour Cue**:
+The amber or red colouring of a temperature Stat on the Screen when it reaches its warm or hot level.
+_Avoid_: Warning, alert, alarm
+
 **Critical Alert**:
 A notice of an urgent problem with the PC, such as a failing Drive or a hardware error logged by Windows, that takes over the Screen in place of the Dashboard.
 _Avoid_: Warning, notification, alarm
